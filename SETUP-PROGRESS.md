@@ -15,6 +15,8 @@ keeps the placeholder token on purpose.
 | Cloud project number | `327001813371` |
 | Cloud project ID | `health-logbook-506821` |
 | Organization | No organization |
+| Time zone | `America/New_York` (Eastern, confirmed) |
+| Apps Script ID | `1bWG45tcsK4BL9M1oN5sVx2Y-ORJckAcXwNy1mq5-1ys6nsY_DOVPwKTJ` |
 | Webhook token | generated 2026-08-27, held in chat + charter, not committed |
 
 ## Phase 1 — data layer
@@ -22,19 +24,20 @@ keeps the placeholder token on purpose.
 ### A. Google Cloud
 - [x] A1 Create project `health-logbook`
 - [x] A5 Copy project number (`327001813371`)
-- [ ] A2 Enable the Google Health API
-- [ ] A3 OAuth consent screen: External, app name `health-logbook`
-- [ ] A4 Add personal Gmail as a test user
-- [ ] A6 Leave publishing status as Testing until B7
+- [x] A2 Enable the Google Health API
+- [x] A3 OAuth consent screen: External, app name `health-logbook`
+- [x] A4 Add personal Gmail as a test user
+- [x] A6 Leave publishing status as Testing until B7
 
 ### B. Sheet + Apps Script
-- [ ] B1 Sheet **Health Logbook**, tab `Log`, 15-column header row
-- [ ] B2 Apps Script: show appsscript.json, set time zone, link GCP project number
+- [x] B1 Sheet **Health Logbook**, tab `Log`, 15-column header row
+- [x] B2 Apps Script: set time zone + linked GCP project (manifest checkbox pending)
 - [ ] B3 Replace `appsscript.json` (confirm time zone)
 - [ ] B4 Replace `Code.gs`
 - [ ] B5 Set `TOKEN` to the generated string
 - [ ] B6 Run `testPullToday()`, authorize, verify the Sheet row
-- [ ] B7 **Publish app to production** (most-skipped step; prevents 7-day token death)
+- [ ] B7 **Publish app to production** — button greyed until an OAuth client exists;
+      Apps Script registers one at B6 authorization, so recheck then (most-skipped step; prevents 7-day token death)
 - [ ] B8 Daily 5-6 AM trigger on `healthNightlyPull`
 - [ ] B9 Deploy web app (Execute as: Me / Anyone with the link), capture `/exec` URL
 - [ ] B10 Browser test `?action=read&days=5&token=...`
