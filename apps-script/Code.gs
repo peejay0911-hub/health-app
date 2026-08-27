@@ -2,6 +2,18 @@
 const SHEET_NAME = 'Log';
 const TOKEN = 'REPLACE-WITH-A-LONG-RANDOM-STRING';
 const API = 'https://health.googleapis.com/v4/users/me/dataTypes/';
+
+// health.googleapis.com rejects any access token that also carries non-health
+// scopes (it named script.external_request and spreadsheets.currentonly as
+// "disallowed_scopes" in a 403). ScriptApp.getOAuthToken() always carries every
+// scope the script holds, so Health calls use a separate OAuth client that asks
+// for the three health scopes and nothing else. Its id/secret live in Script
+// Properties, never in this file.
+const HEALTH_SCOPES = [
+  'https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly',
+  'https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly',
+  'https://www.googleapis.com/auth/googlehealth.sleep.readonly'
+].join(' ');
 const COLS = ['date','weight','steps','sleep','burn','kcal','protein','fat',
               'carbs','rhr','peak_hr','training','dose','mood','note'];
 
@@ -140,8 +152,13 @@ function apiGetDay_(type, filterPrefix, date) {
 }
 
 function apiGet_(path) {
+  const svc = healthService_();
+  if (!svc.hasAccess()) {
+    throw new Error('Health API not authorized. Run authorizeHealth() and open ' +
+                    'the URL it logs. Last error: ' + svc.getLastError());
+  }
   const res = UrlFetchApp.fetch(API + path, {
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    headers: { Authorization: 'Bearer ' + svc.getAccessToken() },
     muteHttpExceptions: true
   });
   if (res.getResponseCode() >= 300) {
@@ -150,6 +167,42 @@ function apiGet_(path) {
   }
   return JSON.parse(res.getContentText());
 }
+
+// ============== HEALTH AUTH ===============
+// Uses the apps-script-oauth2 library, added under Libraries as `OAuth2`.
+function healthService_() {
+  const props = PropertiesService.getScriptProperties();
+  return OAuth2.createService('googlehealth')
+    .setAuthorizationBaseUrl('https://accounts.google.com/o/oauth2/v2/auth')
+    .setTokenUrl('https://oauth2.googleapis.com/token')
+    .setClientId(props.getProperty('CLIENT_ID'))
+    .setClientSecret(props.getProperty('CLIENT_SECRET'))
+    .setCallbackFunction('authCallback')
+    .setPropertyStore(props)
+    .setScope(HEALTH_SCOPES)
+    .setParam('access_type', 'offline')
+    .setParam('prompt', 'consent');
+}
+
+// Run once by hand, then open the URL it logs.
+function authorizeHealth() {
+  const svc = healthService_();
+  if (svc.hasAccess()) { Logger.log('Already authorized.'); return; }
+  Logger.log('Open this URL to authorize:\n\n%s', svc.getAuthorizationUrl());
+}
+
+function authCallback(request) {
+  return HtmlService.createHtmlOutput(
+    healthService_().handleCallback(request)
+      ? 'Authorized. Close this tab and re-run testPullToday().'
+      : 'Denied. Close this tab.');
+}
+
+// Paste this into the OAuth client's Authorized redirect URIs.
+function showRedirectUri() { Logger.log(healthService_().getRedirectUri()); }
+
+// Clears the stored token; run before re-authorizing from scratch.
+function resetHealthAuth() { healthService_().reset(); }
 
 // Dumps raw API responses for one day so schema mismatches are easy to fix.
 function debugDay() {
