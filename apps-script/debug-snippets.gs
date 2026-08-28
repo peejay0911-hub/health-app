@@ -73,3 +73,30 @@ function debugBurn() {
     } catch (err) { Logger.log('%s (%s): ERROR %s', k, spec.path, err); }
   });
 }
+
+// Fitbit publishes no basal-energy-burned data points, so summing per-type
+// points can only ever yield active burn. The API exposes the real total via a
+// separate rollup endpoint (POST :dailyRollUp on total-calories, returning
+// totalCalories.kcalSum). This probes it for yesterday, a complete day.
+function debugRollup() {
+  const svc = healthService_();
+  const date = Utilities.formatDate(new Date(Date.now() - 24 * 3600 * 1000),
+                                    tz_(), 'yyyy-MM-dd');
+  const civil = (s) => {
+    const p = s.split('-');
+    return { date: { year: +p[0], month: +p[1], day: +p[2] } };
+  };
+  const body = {
+    range: { start: civil(date), end: civil(nextDate_(date)) },
+    windowSizeDays: 1
+  };
+  const res = UrlFetchApp.fetch(API + 'total-calories/dataPoints:dailyRollUp', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(body),
+    headers: { Authorization: 'Bearer ' + svc.getAccessToken() },
+    muteHttpExceptions: true
+  });
+  Logger.log('%s -> HTTP %s\n%s', date, res.getResponseCode(),
+             res.getContentText().slice(0, 2000));
+}
