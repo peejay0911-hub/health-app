@@ -88,6 +88,18 @@ function flagProblem_(date, msg) {
   upsertRow_(date, { note: (prior + msg).slice(0, 500) });
 }
 
+// Keeps today's row current so close-out can just read the sheet. Attach a
+// time-driven trigger every 2 hours. Claude cannot write to the logbook, so
+// nothing reaches the sheet unless a trigger puts it there.
+function healthPullToday() {
+  const date = today_();
+  if (!healthService_().hasAccess()) {
+    flagProblem_(date, 'Health auth expired: open Apps Script, run authorizeHealth().');
+    return;
+  }
+  upsertRow_(date, pullDay_(date));
+}
+
 // Run this once by hand to authorize and smoke-test.
 function testPullToday() {
   const date = today_();
