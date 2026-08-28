@@ -100,6 +100,41 @@ function healthPullToday() {
   upsertRow_(date, pullDay_(date));
 }
 
+// One-off history fill. Apps Script stops any run at 6 minutes and a full day's
+// heart-rate pull is slow, so this bails out early and skips days already done:
+// re-run it until the log says nothing was filled.
+function backfillHistory() {
+  const DAYS = 14;
+  if (!healthService_().hasAccess()) {
+    Logger.log('Not authorized. Run authorizeHealth() first.');
+    return;
+  }
+  const started = Date.now();
+  let filled = 0, skipped = 0, ranOut = false;
+  for (let i = 1; i <= DAYS; i++) {
+    if (Date.now() - started > 4.5 * 60 * 1000) { ranOut = true; break; }
+    const date = Utilities.formatDate(new Date(Date.now() - i * 24 * 3600 * 1000),
+                                      tz_(), 'yyyy-MM-dd');
+    const row = readRow_(date);
+    if (row && row.steps !== '') { skipped++; continue; }
+    const pulled = pullDay_(date);
+    upsertRow_(date, pulled);
+    filled++;
+    Logger.log('%s  steps %s | burn %s | weight %s | sleep %s | rhr %s | peak %s%s',
+               date, pulled.steps, pulled.burn, pulled.weight, pulled.sleep,
+               pulled.rhr, pulled.peak_hr,
+               pulled._errors.length ? '  ERRORS: ' + pulled._errors.join(' | ') : '');
+  }
+  // Backfilled dates append to the bottom, so put the sheet back in date order.
+  const sh = sheet_();
+  if (sh.getLastRow() > 2) {
+    sh.getRange(2, 1, sh.getLastRow() - 1, COLS.length)
+      .sort({ column: 1, ascending: true });
+  }
+  Logger.log('Filled %s, skipped %s (already had data).%s', filled, skipped,
+             ranOut ? ' Hit the time limit - run again to continue.' : ' Done.');
+}
+
 // Run this once by hand to authorize and smoke-test.
 function testPullToday() {
   const date = today_();
