@@ -30,6 +30,10 @@ function doGet(e) {
     }
     if (p.action === 'log') {
       if (!p.date) return out_({ error: 'date required' });
+      // Claude cannot reach this URL from its own environment, so close-out is
+      // PJ tapping a link the coach composes. pull=1 folds the Fitbit pull into
+      // that same request, making it one tap rather than two.
+      if (p.pull === '1') upsertRow_(p.date, pullDay_(p.date));
       const fields = {};
       COLS.forEach(c => { if (p[c] !== undefined) fields[c] = p[c]; });
       upsertRow_(p.date, fields);
