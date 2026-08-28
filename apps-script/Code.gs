@@ -68,87 +68,96 @@ function testPullToday() {
 }
 
 // ============== HEALTH API ================
+// Each metric names its data type path (kebab-case), its filter prefix
+// (snake_case), and which time field the API allows filtering it on. Those
+// differ per type and are not interchangeable: interval types expose
+// .interval.civil_start_time, sample types .sample_time.civil_time, daily
+// summaries .date, and sleep only its session end time. Grammar and operators
+// come from the v4 discovery doc; note it supports >= and < but NOT <=.
+const TYPES = {
+  steps:      { path: 'steps',                    prefix: 'steps',                    kind: 'interval' },
+  weight:     { path: 'weight',                   prefix: 'weight',                   kind: 'sample'   },
+  heart_rate: { path: 'heart-rate',               prefix: 'heart_rate',               kind: 'sample'   },
+  rhr:        { path: 'daily-resting-heart-rate', prefix: 'daily_resting_heart_rate', kind: 'daily'    },
+  active:     { path: 'active-energy-burned',     prefix: 'active_energy_burned',     kind: 'interval' },
+  basal:      { path: 'basal-energy-burned',      prefix: 'basal_energy_burned',      kind: 'interval' },
+  sleep:      { path: 'sleep',                    prefix: 'sleep',                    kind: 'sleep'    }
+};
+
 function pullDay_(date) {
   const r = { _errors: [] };
   const attempt = (label, fn) => {
     try { return fn(); }
-    catch (err) { r._errors.push(label + ': ' + String(err).slice(0, 200)); return ''; }
+    catch (err) { r._errors.push(label + ': ' + String(err).slice(0, 300)); return ''; }
   };
 
   r.steps = attempt('steps', () => {
-    const d = apiGetDay_('steps', 'steps', date);
-    const vals = findNums_(d, ['steps', 'count']);
+    const vals = findNums_(apiGetDay_(TYPES.steps, date), ['count']);
     return vals.length ? vals.reduce((a, b) => a + b, 0) : '';
   });
 
+  // Fitbit shows one "calories burned" number; the API splits it into active
+  // and basal, so the day's total is the two summed.
   r.burn = attempt('burn', () => {
-    const d = apiGetDay_('calories-burned', 'calories_burned', date);
-    const vals = findNums_(d, ['caloriesKcal', 'calories', 'energyKcal']);
-    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0)) : '';
+    const kcal = (spec) =>
+      findNums_(apiGetDay_(spec, date), ['kcal']).reduce((a, b) => a + b, 0);
+    const total = kcal(TYPES.active) + kcal(TYPES.basal);
+    return total ? Math.round(total) : '';
   });
 
   r.rhr = attempt('rhr', () => {
-    const d = apiGetDay_('resting-heart-rate', 'resting_heart_rate', date);
-    const vals = findNums_(d, ['beatsPerMinute', 'bpm']);
+    const vals = findNums_(apiGetDay_(TYPES.rhr, date), ['beatsPerMinute']);
     return vals.length ? vals[vals.length - 1] : '';
   });
 
   r.peak_hr = attempt('peak_hr', () => {
-    const vals = findNums_(apiGetDay_('heart-rate', 'heart_rate', date),
-                           ['beatsPerMinute', 'bpm']);
+    const vals = findNums_(apiGetDay_(TYPES.heart_rate, date), ['beatsPerMinute']);
     return vals.length ? Math.max.apply(null, vals) : '';
   });
 
   r.weight = attempt('weight', () => {
-    const d = apiGetDay_('weight', 'weight', date);
-    const kg = findNums_(d, ['weightKg']);
-    if (kg.length) return Math.round(kg[kg.length - 1] * 2.20462 * 10) / 10;
-    const lb = findNums_(d, ['weightLb', 'weightPounds']);
-    return lb.length ? lb[lb.length - 1] : '';
+    const g = findNums_(apiGetDay_(TYPES.weight, date), ['weightGrams']);
+    return g.length ? Math.round(g[g.length - 1] / 453.59237 * 10) / 10 : '';
   });
 
+  // Summed rather than maxed, so a nap counts toward the day's sleep.
   r.sleep = attempt('sleep', () => {
-    const d = apiGetDay_('sleep', 'sleep', date);
-    const mins = findNums_(d, ['minutesAsleep', 'totalMinutesAsleep']);
+    const mins = findNums_(apiGetDay_(TYPES.sleep, date), ['minutesAsleep']);
     if (!mins.length) return '';
-    const m = Math.max.apply(null, mins);
+    const m = mins.reduce((a, b) => a + b, 0);
     return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
   });
 
   return r;
 }
 
-// Fetch one data type for one civil date. Tries the documented filter
-// grammars in order; different data kinds use different time fields.
-function apiGetDay_(type, filterPrefix, date) {
-  const day0 = date + 'T00:00:00';
-  const day1 = date + 'T23:59:59';
-  const filters = [
-    `${filterPrefix}.interval.civil_start_time >= "${day0}" AND ${filterPrefix}.interval.civil_start_time <= "${day1}"`,
-    `${filterPrefix}.date == "${date}"`,
-    `${filterPrefix}.sample_time.civil_time >= "${day0}" AND ${filterPrefix}.sample_time.civil_time <= "${day1}"`,
-    `${filterPrefix}.interval.start_time >= "${utc_(day0)}" AND ${filterPrefix}.interval.start_time <= "${utc_(day1)}"`,
-    `${filterPrefix}.sample_time.physical_time >= "${utc_(day0)}" AND ${filterPrefix}.sample_time.physical_time <= "${utc_(day1)}"`,
-    `${filterPrefix}.interval.end_time >= "${utc_(day0)}" AND ${filterPrefix}.interval.end_time <= "${utc_(day1)}"`
-  ];
-  let lastErr = null;
-  for (let i = 0; i < filters.length; i++) {
-    try {
-      const first = apiGet_(type + '/dataPoints?pageSize=10000&filter=' +
-                            encodeURIComponent(filters[i]));
-      if (!first.dataPoints || !first.dataPoints.length) continue;
-      let all = first, pages = 1;
-      while (all.nextPageToken && pages < 5) {
-        const next = apiGet_(type + '/dataPoints?pageSize=10000&pageToken=' +
-                             all.nextPageToken + '&filter=' + encodeURIComponent(filters[i]));
-        first.dataPoints = first.dataPoints.concat(next.dataPoints || []);
-        all = next; pages++;
-      }
-      return first;
-    } catch (err) { lastErr = err; }
+// Civil-time literals keep this in PJ's own day boundaries, so no UTC
+// conversion is needed. Sleep is filtered by when the session ended, which is
+// what attributes last night's sleep to today.
+function dayFilter_(spec, date) {
+  const next = nextDate_(date);
+  const range = (field) =>
+    `${spec.prefix}.${field} >= "${date}" AND ${spec.prefix}.${field} < "${next}"`;
+  switch (spec.kind) {
+    case 'interval': return range('interval.civil_start_time');
+    case 'sample':   return range('sample_time.civil_time');
+    case 'daily':    return range('date');
+    case 'sleep':    return range('interval.civil_end_time');
   }
-  if (lastErr) throw lastErr;
-  return { dataPoints: [] };
+  throw new Error('unknown kind: ' + spec.kind);
+}
+
+function apiGetDay_(spec, date) {
+  const filter = encodeURIComponent(dayFilter_(spec, date));
+  const out = { dataPoints: [] };
+  let token = '', pages = 0;
+  do {
+    const page = apiGet_(spec.path + '/dataPoints?pageSize=1000&filter=' + filter +
+                         (token ? '&pageToken=' + encodeURIComponent(token) : ''));
+    out.dataPoints = out.dataPoints.concat(page.dataPoints || []);
+    token = page.nextPageToken || '';
+  } while (token && ++pages < 25);
+  return out;
 }
 
 function apiGet_(path) {
@@ -204,15 +213,15 @@ function showRedirectUri() { Logger.log(healthService_().getRedirectUri()); }
 // Clears the stored token; run before re-authorizing from scratch.
 function resetHealthAuth() { healthService_().reset(); }
 
-// Dumps raw API responses for one day so schema mismatches are easy to fix.
+// Dumps raw API responses so schema mismatches are easy to spot.
 function debugDay() {
-  ['steps', 'calories-burned', 'resting-heart-rate', 'heart-rate', 'weight', 'sleep']
-    .forEach(t => {
-      try {
-        const raw = apiGet_(t + '/dataPoints?pageSize=3');
-        Logger.log('==== %s ====\n%s', t, JSON.stringify(raw).slice(0, 3000));
-      } catch (err) { Logger.log('==== %s ==== ERROR %s', t, err); }
-    });
+  Object.keys(TYPES).forEach(k => {
+    try {
+      const raw = apiGet_(TYPES[k].path + '/dataPoints?pageSize=3');
+      Logger.log('==== %s (%s) ====\n%s', k, TYPES[k].path,
+                 JSON.stringify(raw).slice(0, 2000));
+    } catch (err) { Logger.log('==== %s ==== ERROR %s', k, err); }
+  });
 }
 
 // ================ HELPERS =================
@@ -233,9 +242,12 @@ function findNums_(obj, keys) {
 function sheet_() { return SpreadsheetApp.getActive().getSheetByName(SHEET_NAME); }
 function tz_() { return Session.getScriptTimeZone(); }
 function today_() { return Utilities.formatDate(new Date(), tz_(), 'yyyy-MM-dd'); }
-function utc_(civil) {
-  const d = Utilities.parseDate(civil, tz_(), "yyyy-MM-dd'T'HH:mm:ss");
-  return Utilities.formatDate(d, 'GMT', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+// Adding 36h rather than 24h so a DST change cannot land back on the same
+// civil date.
+function nextDate_(date) {
+  const d = Utilities.parseDate(date, tz_(), 'yyyy-MM-dd');
+  return Utilities.formatDate(new Date(d.getTime() + 36 * 3600 * 1000),
+                              tz_(), 'yyyy-MM-dd');
 }
 
 function upsertRow_(date, fields) {
