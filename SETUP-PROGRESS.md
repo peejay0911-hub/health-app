@@ -78,6 +78,22 @@ gives the correct type IDs, the correct filter members, and the right key
 names for `findNums_` in one round trip. If the list endpoint 404s, stop
 chasing it and stay on manual entry.
 
+## Parked for later: backfill ~2 weeks of history
+
+Once `pull` is proven correct on a complete day, walk it backwards over the
+last ~14 days so the 7-day rolling average and the first weekly review have
+real numbers instead of starting from empty. Row 2 (2026-08-27) is already
+sitting blank and is the first candidate.
+
+Two ways to run it, both fine:
+- webhook, one date at a time: `?action=pull&date=YYYY-MM-DD&token=...`
+- a one-off loop in the editor calling `upsertRow_(d, pullDay_(d))` per date,
+  which avoids 14 manual URL visits
+
+Do this only after the burn figure is confirmed correct — backfilling a
+column that is quietly active-only just fills the sheet with wrong numbers
+that look plausible.
+
 ## Phase 2 — overnight verification + charter install
 - [ ] Morning-after check that the nightly trigger fired
 - [ ] Fill webhook URL + token into the charter
