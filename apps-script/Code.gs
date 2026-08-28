@@ -79,6 +79,8 @@ const TYPES = {
   weight:     { path: 'weight',                   prefix: 'weight',                   kind: 'sample'   },
   heart_rate: { path: 'heart-rate',               prefix: 'heart_rate',               kind: 'sample'   },
   rhr:        { path: 'daily-resting-heart-rate', prefix: 'daily_resting_heart_rate', kind: 'daily'    },
+  // Kept for debugBurn only; burn itself comes from the total-calories rollup
+  // because basal returns no data points.
   active:     { path: 'active-energy-burned',     prefix: 'active_energy_burned',     kind: 'interval' },
   basal:      { path: 'basal-energy-burned',      prefix: 'basal_energy_burned',      kind: 'interval' },
   sleep:      { path: 'sleep',                    prefix: 'sleep',                    kind: 'sleep'    }
@@ -96,13 +98,13 @@ function pullDay_(date) {
     return vals.length ? vals.reduce((a, b) => a + b, 0) : '';
   });
 
-  // Fitbit shows one "calories burned" number; the API splits it into active
-  // and basal, so the day's total is the two summed.
+  // Fitbit publishes active-energy-burned but no basal-energy-burned data
+  // points, so summing the two yields active burn alone (227 kcal against the
+  // app's ~3,100 for the same day). The real total exists only pre-aggregated,
+  // behind the rollup endpoint.
   r.burn = attempt('burn', () => {
-    const kcal = (spec) =>
-      findNums_(apiGetDay_(spec, date), ['kcal']).reduce((a, b) => a + b, 0);
-    const total = kcal(TYPES.active) + kcal(TYPES.basal);
-    return total ? Math.round(total) : '';
+    const vals = findNums_(rollupDay_('total-calories', date), ['kcalSum']);
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0)) : '';
   });
 
   r.rhr = attempt('rhr', () => {
@@ -160,14 +162,42 @@ function apiGetDay_(spec, date) {
   return out;
 }
 
-function apiGet_(path) {
+function healthToken_() {
   const svc = healthService_();
   if (!svc.hasAccess()) {
     throw new Error('Health API not authorized. Run authorizeHealth() and open ' +
                     'the URL it logs. Last error: ' + svc.getLastError());
   }
+  return svc.getAccessToken();
+}
+
+// Daily aggregates, for values the API does not publish as data points.
+// Civil range, end-exclusive: start 2026-08-27 / end 2026-08-28 is that one day.
+function rollupDay_(path, date) {
+  const civil = (s) => {
+    const p = s.split('-');
+    return { date: { year: +p[0], month: +p[1], day: +p[2] } };
+  };
+  const res = UrlFetchApp.fetch(API + path + '/dataPoints:dailyRollUp', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      range: { start: civil(date), end: civil(nextDate_(date)) },
+      windowSizeDays: 1
+    }),
+    headers: { Authorization: 'Bearer ' + healthToken_() },
+    muteHttpExceptions: true
+  });
+  if (res.getResponseCode() >= 300) {
+    throw new Error('HTTP ' + res.getResponseCode() + ' on ' + path +
+                    ':dailyRollUp: ' + res.getContentText().slice(0, 200));
+  }
+  return JSON.parse(res.getContentText()).rollupDataPoints || [];
+}
+
+function apiGet_(path) {
   const res = UrlFetchApp.fetch(API + path, {
-    headers: { Authorization: 'Bearer ' + svc.getAccessToken() },
+    headers: { Authorization: 'Bearer ' + healthToken_() },
     muteHttpExceptions: true
   });
   if (res.getResponseCode() >= 300) {

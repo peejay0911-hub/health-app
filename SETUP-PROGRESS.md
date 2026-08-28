@@ -90,9 +90,7 @@ Two ways to run it, both fine:
 - a one-off loop in the editor calling `upsertRow_(d, pullDay_(d))` per date,
   which avoids 14 manual URL visits
 
-Do this only after the burn figure is confirmed correct — backfilling a
-column that is quietly active-only just fills the sheet with wrong numbers
-that look plausible.
+Burn is now confirmed correct (total-calories rollup), so this is unblocked.
 
 ## Phase 2 — overnight verification + charter install
 - [ ] Morning-after check that the nightly trigger fired
