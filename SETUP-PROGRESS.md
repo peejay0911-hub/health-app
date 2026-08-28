@@ -35,12 +35,48 @@ keeps the placeholder token on purpose.
 - [ ] B3 Replace `appsscript.json` (confirm time zone)
 - [ ] B4 Replace `Code.gs`
 - [ ] B5 Set `TOKEN` to the generated string
-- [ ] B6 Run `testPullToday()`, authorize, verify the Sheet row
+- [~] B6 `testPullToday()` — auth works, API calls still failing (see below)
 - [ ] B7 **Publish app to production** — button greyed until an OAuth client exists;
       Apps Script registers one at B6 authorization, so recheck then (most-skipped step; prevents 7-day token death)
 - [ ] B8 Daily 5-6 AM trigger on `healthNightlyPull`
 - [ ] B9 Deploy web app (Execute as: Me / Anyone with the link), capture `/exec` URL
 - [ ] B10 Browser test `?action=read&days=5&token=...`
+
+## Open issue: `action=pull` (Health API reads)
+
+Auth is solved. Data-layer reads are not. `log` and `read` are unaffected —
+they are pure Sheets operations — so the coach is fully usable without this.
+
+**Fixed so far**
+
+1. `403 DISALLOWED_OAUTH_SCOPES` — the API refuses any token also carrying
+   non-health scopes (it named `maestro_external_request`, `wise_currentonly`).
+   Fixed by giving Health calls their own OAuth client via apps-script-oauth2,
+   credentials in Script Properties (`CLIENT_ID`, `CLIENT_SECRET`).
+   Side effects: both previously unverified `googlehealth` scope names are
+   confirmed real, and creating the client cleared the Audience page's
+   incomplete-configuration banner that was grey-ing out **Publish app**.
+2. Client ID was truncated on first paste (`client_id=.apps.googleusercontent.com`
+   → `invalid_client`). Full ID:
+   `327001813371-r5ilo1dfss5iveva58o7odohl17ftpdm.apps.googleusercontent.com`
+
+**Still failing** — `testPullToday()` now returns HTTP 400s, three kinds:
+
+| Types | Error | Means |
+|---|---|---|
+| `calories-burned`, `resting-heart-rate` | `Invalid data type ID` | these IDs do not exist |
+| `steps`, `heart-rate`, `weight` | `INVALID_DATA_POINT_FILTER_DATA_TYPE_MEMBER` | type IDs are valid; the filter's field name is not |
+| `sleep` | `INVALID_DATA_POINT_FILTER_RESTRICTION_COMPARATOR` | type and field valid; `>=`/`<=` not allowed there |
+
+Note `apiGetDay_` tries six filter grammars and only reports the last one's
+error, so each message reflects filter #6 only.
+
+**Next step:** run `debugTypes()` (in the editor, not committed) — it calls
+`GET /v4/users/me/dataTypes?pageSize=200` to enumerate real type IDs and pulls
+two unfiltered `steps` data points to reveal the real response shape. That
+gives the correct type IDs, the correct filter members, and the right key
+names for `findNums_` in one round trip. If the list endpoint 404s, stop
+chasing it and stay on manual entry.
 
 ## Phase 2 — overnight verification + charter install
 - [ ] Morning-after check that the nightly trigger fired
