@@ -57,3 +57,19 @@ function debugClient() {
   Logger.log('CLIENT_SECRET: %s, length %s',
              sec === null ? '(MISSING)' : 'present', sec ? sec.length : 0);
 }
+
+// Is the day's burn total, or active-only? Fitbit shows one calories-burned
+// number; this API splits it into active and basal, and basal may simply not
+// be populated. Logs each side separately so a low total is attributable.
+function debugBurn() {
+  const date = today_();
+  ['active', 'basal'].forEach(k => {
+    const spec = TYPES[k];
+    try {
+      const d = apiGetDay_(spec, date);
+      const sum = findNums_(d, ['kcal']).reduce((a, b) => a + b, 0);
+      Logger.log('%s (%s): %s data points, %s kcal',
+                 k, spec.path, (d.dataPoints || []).length, Math.round(sum));
+    } catch (err) { Logger.log('%s (%s): ERROR %s', k, spec.path, err); }
+  });
+}
