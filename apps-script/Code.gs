@@ -16,6 +16,7 @@ const HEALTH_SCOPES = [
 ].join(' ');
 const COLS = ['date','weight','steps','sleep','burn','kcal','protein','fat',
               'carbs','rhr','peak_hr','training','dose','mood','note'];
+const ALERT_EMAIL = 'peejay0911@gmail.com';
 
 // ================ WEB APP =================
 function doGet(e) {
@@ -86,6 +87,19 @@ function flagProblem_(date, msg) {
   const row = readRow_(date);
   const prior = row && row.note ? row.note + ' | ' : '';
   upsertRow_(date, { note: (prior + msg).slice(0, 500) });
+  alertOnce_('sync problem on ' + date, msg);
+}
+
+// Google's own trigger notifications only fire on an exception. Expired auth
+// fails politely instead, which would otherwise look like a quiet week, so mail
+// it directly. Capped at one a day: the top-up trigger runs twelve times.
+function alertOnce_(subject, body) {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('LAST_ALERT') === today_()) return;
+  try {
+    MailApp.sendEmail(ALERT_EMAIL, '[Health Logbook] ' + subject, body);
+    props.setProperty('LAST_ALERT', today_());
+  } catch (err) { Logger.log('alert email failed: %s', err); }
 }
 
 // Keeps today's row current so close-out can just read the sheet. Attach a
