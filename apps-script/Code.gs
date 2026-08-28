@@ -53,10 +53,35 @@ function out_(obj) {
 // ============ NIGHTLY TRIGGER =============
 // Attach a daily 5-6am time-driven trigger to this. Pulls yesterday's
 // final numbers after the night's sleep has synced.
+//
+// Publishing the OAuth app to production is blocked without a domain and a
+// hosted privacy policy, so it stays in Testing, where Google expires refresh
+// tokens every 7 days. That failure is silent and looks exactly like a quiet
+// week, so anything wrong is written into the row's note column, where the
+// coach reads it every morning.
 function healthNightlyPull() {
   const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const date = Utilities.formatDate(d, tz_(), 'yyyy-MM-dd');
-  upsertRow_(date, pullDay_(date));
+
+  if (!healthService_().hasAccess()) {
+    flagProblem_(date, 'Health auth expired: open Apps Script, run ' +
+                       'authorizeHealth(), then open the URL it logs.');
+    return;
+  }
+  const pulled = pullDay_(date);
+  upsertRow_(date, pulled);
+  if (pulled._errors.length) {
+    flagProblem_(date, 'Pull errors: ' + pulled._errors.join(' | '));
+  }
+}
+
+// Appends rather than overwrites: the note column is also where the coach
+// records how a day felt.
+function flagProblem_(date, msg) {
+  Logger.log('%s: %s', date, msg);
+  const row = readRow_(date);
+  const prior = row && row.note ? row.note + ' | ' : '';
+  upsertRow_(date, { note: (prior + msg).slice(0, 500) });
 }
 
 // Run this once by hand to authorize and smoke-test.

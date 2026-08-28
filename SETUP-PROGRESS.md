@@ -35,9 +35,19 @@ keeps the placeholder token on purpose.
 - [ ] B3 Replace `appsscript.json` (confirm time zone)
 - [ ] B4 Replace `Code.gs`
 - [ ] B5 Set `TOKEN` to the generated string
-- [~] B6 `testPullToday()` — auth works, API calls still failing (see below)
-- [ ] B7 **Publish app to production** — button greyed until an OAuth client exists;
-      Apps Script registers one at B6 authorization, so recheck then (most-skipped step; prevents 7-day token death)
+- [x] B6 `testPullToday()` — all six metrics correct, `_errors` empty
+- [!] B7 **Publish app — not possible, deliberately skipped.** The Publish
+      button stays greyed with an "OAuth configuration is incomplete" banner
+      even after a working OAuth client exists. Branding shows no error and
+      every required field is filled; what is empty is App domain (home page,
+      privacy policy, terms of service) and Authorized domains. Publishing an
+      External app with sensitive health scopes wants those plus Search Console
+      verification and likely a review. Disproportionate for one user.
+      **Consequence:** Testing status expires refresh tokens every 7 days, so
+      health auth will need `authorizeHealth()` re-run about weekly.
+      `healthNightlyPull` now detects this and writes the reason into the row's
+      note column, where the morning brief will surface it.
+      Revisit only if PJ already owns a domain. (most-skipped step; prevents 7-day token death)
 - [ ] B8 Daily 5-6 AM trigger on `healthNightlyPull`
 - [ ] B9 Deploy web app (Execute as: Me / Anyone with the link), capture `/exec` URL
 - [ ] B10 Browser test `?action=read&days=5&token=...`
